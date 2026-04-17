@@ -6,7 +6,6 @@ on:
 permissions:
   contents: read
   issues: write
-  repository-projects: write
 
 jobs:
   setup-project-board:
@@ -15,7 +14,7 @@ jobs:
       - name: Create GitHub Project Board and Issues
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           script: |
             const owner = context.repo.owner;
             const repo  = context.repo.repo;
