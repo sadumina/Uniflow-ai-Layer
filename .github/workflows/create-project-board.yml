@@ -1,0 +1,252 @@
+name: Create Project Board
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  repository-projects: write
+
+jobs:
+  setup-project-board:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Project Board and Issues
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // ── 1. Create the GitHub Projects v2 board ──────────────────────
+            const createProject = await github.graphql(`
+              mutation($ownerId: ID!, $title: String!) {
+                createProjectV2(input: { ownerId: $ownerId, title: $title }) {
+                  projectV2 { id url }
+                }
+              }
+            `, {
+              ownerId: (await github.graphql(
+                `query($login: String!) { user(login: $login) { id } }`,
+                { login: owner }
+              )).user.id,
+              title: "UniFlow+ AI Layer"
+            });
+
+            const projectId  = createProject.createProjectV2.projectV2.id;
+            const projectUrl = createProject.createProjectV2.projectV2.url;
+            console.log(`Project created: ${projectUrl}`);
+
+            // ── 2. Add a "Status" single-select field with four options ──────
+            const addField = await github.graphql(`
+              mutation($projectId: ID!, $name: String!, $options: [ProjectV2SingleSelectFieldOptionInput!]!) {
+                createProjectV2Field(input: {
+                  projectId: $projectId,
+                  dataType: SINGLE_SELECT,
+                  name: $name,
+                  singleSelectOptions: $options
+                }) {
+                  projectV2Field {
+                    ... on ProjectV2SingleSelectField {
+                      id
+                      options { id name }
+                    }
+                  }
+                }
+              }
+            `, {
+              projectId,
+              name: "Status",
+              options: [
+                { name: "Backlog",     color: "GRAY",   description: "Not yet started"    },
+                { name: "In Progress", color: "YELLOW", description: "Actively being worked on" },
+                { name: "In Review",   color: "BLUE",   description: "Awaiting code review" },
+                { name: "Done",        color: "GREEN",  description: "Completed"           }
+              ]
+            });
+
+            const field   = addField.createProjectV2Field.projectV2Field;
+            const options = Object.fromEntries(field.options.map(o => [o.name, o.id]));
+            const fieldId = field.id;
+            console.log("Status field created with options:", Object.keys(options));
+
+            // ── 3. Define issues to create ───────────────────────────────────
+            const issues = [
+              // Infrastructure
+              {
+                title: "Set up FastAPI project structure and entry point",
+                body:  "Initialise `app/main.py` with FastAPI instance, register all routers and expose a `/health` endpoint returning `{\"status\": \"ok\"}`.",
+                labels: ["infrastructure"],
+                status: "Done"
+              },
+              {
+                title: "Define Pydantic request/response schemas",
+                body:  "Create `app/schemas.py` with `TaskInput`, `PriorityOutput`, `WorkloadInput`, `WorkloadOutput`, `RiskInput`, `RiskOutput`, `RecommendationInput`, and `RecommendationOutput` models.",
+                labels: ["infrastructure"],
+                status: "Done"
+              },
+              // AI Engines
+              {
+                title: "Implement Task Priority AI engine",
+                body:  "Build `app/engine/task_priority.py` — score tasks based on deadline proximity, difficulty, task type, and academic year. Return `priority_score`, `priority_level`, and `explanation` list.",
+                labels: ["ai-engine", "feature"],
+                status: "Done"
+              },
+              {
+                title: "Implement Workload Analysis AI engine",
+                body:  "Build `app/engine/workload.py` — evaluate weekly task count, high-difficulty task ratio, and estimated hours to produce a `workload_level` and `workload_score` with warnings.",
+                labels: ["ai-engine", "feature"],
+                status: "Done"
+              },
+              {
+                title: "Implement Risk Prediction AI engine",
+                body:  "Build `app/engine/risk.py` — combine productivity score, workload level, deadline proximity, and missed-deadline history into a `risk_level` and `risk_score` with reasons.",
+                labels: ["ai-engine", "feature"],
+                status: "Done"
+              },
+              {
+                title: "Implement AI Recommendations engine",
+                body:  "Build `app/engine/recommendations.py` — generate contextual study tips by combining outputs from the Priority, Workload, and Risk engines.",
+                labels: ["ai-engine", "feature"],
+                status: "Done"
+              },
+              // Testing
+              {
+                title: "Write unit tests for Task Priority engine",
+                body:  "Cover all scoring branches in `calculate_priority`: deadline edge-cases (≤2, ≤7, >7 days), all difficulty levels, all task types, and academic-year adjustments (Year 1 & 4).",
+                labels: ["testing"],
+                status: "In Progress"
+              },
+              {
+                title: "Write unit tests for Workload Analysis engine",
+                body:  "Cover `analyze_workload` scoring: high/moderate/low hours thresholds, task-count tiers, high-difficulty task counts, and Year 4 adjustment.",
+                labels: ["testing"],
+                status: "In Progress"
+              },
+              {
+                title: "Write unit tests for Risk Prediction engine",
+                body:  "Cover `predict_risk` scoring: all productivity tiers, workload levels, deadline proximity bands, and missed-deadline history (0 / 1 / ≥2).",
+                labels: ["testing"],
+                status: "Backlog"
+              },
+              {
+                title: "Write unit tests for Recommendations engine",
+                body:  "Cover `generate_recommendations` for all combinations of High/Medium/Low priority, workload, and risk levels, ensuring the correct tips are returned.",
+                labels: ["testing"],
+                status: "Backlog"
+              },
+              {
+                title: "Add integration / API-level tests using TestClient",
+                body:  "Use FastAPI `TestClient` (or pytest + httpx) to call each endpoint (`/ai/task-priority`, `/ai/workload`, `/ai/risk`, `/ai/recommendations`) and assert HTTP 200 + schema-valid responses.",
+                labels: ["testing"],
+                status: "Backlog"
+              },
+              // Documentation
+              {
+                title: "Write API documentation and usage examples",
+                body:  "Add a `README.md` covering: project overview, local-setup instructions (`pip install -r requirements.txt` + `uvicorn`), endpoint reference table, and sample payloads from `tests/sample_payloads.json`.",
+                labels: ["documentation"],
+                status: "In Progress"
+              },
+              // CI/CD & DevOps
+              {
+                title: "Add CI pipeline with GitHub Actions",
+                body:  "Create `.github/workflows/ci.yml` that installs dependencies and runs `pytest` on every push and pull request to `main`.",
+                labels: ["ci-cd"],
+                status: "Backlog"
+              },
+              {
+                title: "Add Dockerfile and docker-compose for local development",
+                body:  "Containerise the FastAPI app so contributors can run `docker compose up` without a local Python environment.",
+                labels: ["ci-cd", "infrastructure"],
+                status: "Backlog"
+              },
+              // Enhancements
+              {
+                title: "Improve scoring algorithm with ML-based weights",
+                body:  "Replace hard-coded score increments in the four engines with data-driven weights trained on historical academic data, improving prediction accuracy.",
+                labels: ["enhancement"],
+                status: "Backlog"
+              },
+              {
+                title: "Add /ai/full-analysis composite endpoint",
+                body:  "Expose a single `POST /ai/full-analysis` endpoint that accepts combined input and calls all four engines internally, returning a unified response object.",
+                labels: ["feature"],
+                status: "Backlog"
+              },
+              {
+                title: "Add input validation and error handling middleware",
+                body:  "Register a global exception handler for `RequestValidationError` and `HTTPException` that returns consistent JSON error bodies with descriptive messages.",
+                labels: ["infrastructure", "enhancement"],
+                status: "Backlog"
+              }
+            ];
+
+            // ── 4. Ensure labels exist ───────────────────────────────────────
+            const labelDefs = {
+              "infrastructure": { color: "0075ca", description: "Project setup and configuration"        },
+              "ai-engine":      { color: "d93f0b", description: "Core AI engine modules"                 },
+              "feature":        { color: "a2eeef", description: "New feature"                            },
+              "testing":        { color: "e4e669", description: "Tests and QA"                           },
+              "documentation":  { color: "0052cc", description: "Improvements or additions to docs"      },
+              "ci-cd":          { color: "bfd4f2", description: "CI/CD and DevOps"                       },
+              "enhancement":    { color: "84b6eb", description: "Improvement to existing functionality"  }
+            };
+
+            for (const [name, { color, description }] of Object.entries(labelDefs)) {
+              try {
+                await github.rest.issues.createLabel({ owner, repo, name, color, description });
+                console.log(`Label created: ${name}`);
+              } catch (e) {
+                if (e.status === 422) {
+                  console.log(`Label already exists: ${name}`);
+                } else {
+                  throw e;
+                }
+              }
+            }
+
+            // ── 5. Create issues and add them to the project board ───────────
+            for (const issue of issues) {
+              // Create the GitHub issue
+              const created = await github.rest.issues.create({
+                owner,
+                repo,
+                title:  issue.title,
+                body:   issue.body,
+                labels: issue.labels
+              });
+              console.log(`Issue #${created.data.number}: ${issue.title}`);
+
+              // Add the issue to the project
+              const addItem = await github.graphql(`
+                mutation($projectId: ID!, $contentId: ID!) {
+                  addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                    item { id }
+                  }
+                }
+              `, { projectId, contentId: created.data.node_id });
+
+              const itemId = addItem.addProjectV2ItemById.item.id;
+
+              // Set the Status field
+              if (options[issue.status]) {
+                await github.graphql(`
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                    updateProjectV2ItemFieldValue(input: {
+                      projectId: $projectId,
+                      itemId: $itemId,
+                      fieldId: $fieldId,
+                      value: { singleSelectOptionId: $optionId }
+                    }) {
+                      projectV2Item { id }
+                    }
+                  }
+                `, { projectId, itemId, fieldId, optionId: options[issue.status] });
+              }
+            }
+
+            console.log(`\n✅ Project board setup complete: ${projectUrl}`);
+            core.notice(`Project board created: ${projectUrl}`);
