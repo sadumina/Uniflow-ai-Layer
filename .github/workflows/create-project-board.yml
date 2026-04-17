@@ -29,9 +29,9 @@ jobs:
               }
             `, {
               ownerId: (await github.graphql(
-                `query($login: String!) { user(login: $login) { id } }`,
-                { login: owner }
-              )).user.id,
+                `query($owner: String!) { repositoryOwner(login: $owner) { id } }`,
+                { owner }
+              )).repositoryOwner.id,
               title: "UniFlow+ AI Layer"
             });
 
@@ -60,10 +60,10 @@ jobs:
               projectId,
               name: "Status",
               options: [
-                { name: "Backlog",     color: "GRAY",   description: "Not yet started"    },
+                { name: "Backlog",     color: "GRAY",   description: "Not yet started" },
                 { name: "In Progress", color: "YELLOW", description: "Actively being worked on" },
                 { name: "In Review",   color: "BLUE",   description: "Awaiting code review" },
-                { name: "Done",        color: "GREEN",  description: "Completed"           }
+                { name: "Done",        color: "GREEN",  description: "Completed" }
               ]
             });
 
@@ -115,7 +115,7 @@ jobs:
               // Testing
               {
                 title: "Write unit tests for Task Priority engine",
-                body:  "Cover all scoring branches in `calculate_priority`: deadline edge-cases (≤2, ≤7, >7 days), all difficulty levels, all task types, and academic-year adjustments (Year 1 & 4).",
+                body:  "Cover all scoring branches in `calculate_priority`: deadline edge cases (≤2, ≤7, >7 days), all difficulty levels, all task types, and academic-year adjustments (Year 1 & 4).",
                 labels: ["testing"],
                 status: "In Progress"
               },
